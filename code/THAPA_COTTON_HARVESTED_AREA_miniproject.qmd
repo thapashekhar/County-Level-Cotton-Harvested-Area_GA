@@ -1,0 +1,457 @@
+---
+title: "Mini-project instructions"
+subtitle: "COTTON HARVESTED AREA"
+author: "SHEKHAR THAPA"
+format:
+  html:
+    code-fold: true
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: cerulean
+---
+
+# Instructions  
+This file contains both the **instructions** for the mini-project, and also the **questions**. You are required to use this file to produce code, output, and answers to the questions below.  
+
+Besides simply creating output, make sure to answer (with words) what the question is asking. You will need to create tables and/or plots to arrive at the answers, and then comment on what you found below it.  
+
+To get you set up:  
+
+  - Go to your course main folder  
+  - Create a folder called `03 mini project - Your Full Name`  
+  - Go inside the folder you just created, and create the sub-folders `data`, `code`, `output`  
+  - Move this script inside the `code` folder  
+  - After downloading the data (instructions below), rename it as `commodity_category.csv`, making sure to adapt the name to reflect your commodity and category.  
+  - Move this data into the `data` folder  
+  - Create an RStudio project at the main level of this folder structure  
+
+# Mini-project information  
+Fill in below the information regarding your mini-project as outlined in class:  
+
+- Name: Shekhar Thapa
+- Commodity: Cotton
+- Category: Harvested Area 
+- Data Item: Cotton-Upland Acres Harvested
+
+Update the file YAML (the first few lines of code fenced in between ---) by writing your full name on the `author:` line, and your commodity and category on the `subtitle:` line.  
+
+# USDA NASS data retrieval  
+Go on the [USDA NASS QuickStats portal](https://quickstats.nass.usda.gov) and make the appropriate selections to retrieve the data needed for your project.
+
+> Our goal is to download data related to your commodity and category for all counties in the state of Georgia for all available years.  
+
+Once you arrive at a final selection, **take a screen shot** of all selected variables in your query. Keep this screen shot (you will need it later).  
+
+
+# Setup  
+Here's where you will load your packages and load your data.  
+Follow a similar structure as we did in class.
+
+## Installing packages and loading libraries
+```{r}
+#| message: false
+
+# packages installation
+#install.packages("USAboundaries")
+#install.packages("gganimate")
+#install.packages("transformr")
+#install.packages("mapview")
+#install.packages("viridis")
+#install.packages("dlookr")
+#install.packages("ggtext")
+
+# loading required libraries
+library(tidyverse)
+library(janitor)
+library(ggthemes)
+library(sf)
+library(USAboundaries)
+library(mapview)
+library(gganimate)
+library(viridisLite)
+library(viridis)
+library(dlookr)
+library(ggtext)
+```
+## Importing data
+The raw data was downloaded in CSV file from [USDA NASS QuickStats portal](https://quickstats.nass.usda.gov) for cotton as commodity and area harvested as category with Cotton-Upland acres harvested as data item for all counties in Georgia for all available years. The csv file is imported using read.csv() and the first six rows of the data is viewed using head() function.
+```{r}
+cotton_area_harvested <- read.csv("../data/cotton_area_harvested.csv")
+
+head(cotton_area_harvested)
+```
+
+# EDA  
+You may need to do some EDA to make sure you have the correct data (column names, variable classes, etc.).  
+Follow a similar structure as we did in class, both for the summary and spatial scripts.
+
+## Names of columns and summary
+```{r}
+# name of columns
+names(cotton_area_harvested)
+#summary
+summary(cotton_area_harvested)
+
+```
+
+The dataframe contains 21 columns and 8078 rows of data. 
+
+## Exploring column classes and distinct cases
+```{r}
+cotton_area_harvested %>%
+  diagnose()
+```
+From above output and summary output, it is noted that Year column is in integer, County is in character, and Value column is also  **in character instead of numerical**.
+
+## Unique value in program column
+```{r}
+cotton_area_harvested %>%
+  #distinct(Program)
+  group_by(Program) %>%
+  tally()
+```
+The data contains 7727 rows of survey data. So, we will be working on Survey data only.
+
+# Wrangling  
+Based on your EDA, you may need to perform data wrangling operations to get your data ready to be used.  
+Follow a similar structure as we did in class, both for the summary and spatial scripts.    
+
+## cotton_area_harvested_w
+The wrangled version of cotton harvested area data is shown below. The harvested area in acres is transformed into thousand of acres in a new column.
+```{r}
+cotton_area_harvested_w <- cotton_area_harvested %>%
+  #cleaning column names into standard forms
+  clean_names() %>%
+  #selecting survey data only
+  filter(program == "SURVEY") %>%
+  #selecting desired variables
+  dplyr::select(year,
+                county,
+                area_harvested_ac = value # renaming value as area_harvested_ac
+                ) %>%
+  # replacing "(D)" by NA in 
+  mutate(area_harvested_ac = ifelse(area_harvested_ac == "(D)",
+                          NA, 
+                          area_harvested_ac)) %>%
+  # removing "," character from area_harvested_ac
+  mutate(area_harvested_ac = str_remove(area_harvested_ac, ",")) %>%
+  # transforming character to numeric
+  mutate(area_harvested_ac = as.numeric(area_harvested_ac)) %>%
+  # Transforming area harvested from acres to thousands acres
+  mutate(area_harvested_k_ac = area_harvested_ac/1000) %>%
+  # Title case for county name
+  mutate(county = str_to_title(county))
+
+head(cotton_area_harvested_w)
+
+```
+## summary of cotton_area_harvested_w
+The summary of the wrangled data is shown below:
+```{r}
+# Summary
+summary(cotton_area_harvested_w)
+```
+
+# Questions 
+Below each question, create chunk(s) to write code to find the answer.  
+Then, write a full sentence to answer the question.  
+
+## What were the minimum and maximum years reported on your data?  
+```{r}
+min(cotton_area_harvested_w$year)
+max(cotton_area_harvested_w$year)
+```
+1943 is the minimum year and 2021 is the maximum year reported on the data.
+
+
+## What were the minimum and maximum values for your category at the county level (e.g., yield, production, area, etc.)? When (what year) and where (what county) did these min and max values occurred?  
+```{r}
+#| message: false
+#| warning: false
+
+cotton_area_harvested_w %>%
+  filter(county != "Other (Combined) Counties") %>%
+  filter(county != "Other Counties") %>%
+  filter(area_harvested_k_ac == max(area_harvested_k_ac, na.rm = T))
+
+
+cotton_area_harvested_w %>%
+  filter(county != "Other (Combined) Counties") %>%
+  filter(county != "Other Counties") %>%
+  filter(area_harvested_k_ac == min(area_harvested_k_ac, na.rm = T))
+```
+In the given data, the minimum value of 0.025 thousand acres cotton harvested area was observed in **1979**, in **Bibb** county. Similarly, the maximum value of 80.8 thousand acres cotton harvested area was observed in **2004**, in **Dooly** county.
+
+## Plot your category values as a density plot. How does the distribution look like (skewed, normal)? Where does the distribution appear to peak related to your category value (look on the x-axis)?  
+```{r}
+#| message: false
+#| warning: false
+ggplot(cotton_area_harvested_w, aes(x = area_harvested_k_ac))+
+  geom_density()+
+  scale_x_continuous(breaks = round(seq(0,120, by =10),1))+
+  geom_vline(xintercept = 1,cex =0.1, color = "red")+
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size=25))+
+  xlab("cotton harvested area (thousand acres)")
+  
+ 
+  
+```
+The distribution of cotton harvested area is highly right skewed. The distribution appears to have peak at about 1 thousand acres of cotton harvested area. The red vertical line at 1 thousand acres intersects at the peak of the density curve.
+
+## Plot your category values as a boxplot over years. Which year(s) seem to have the largest variability?  
+```{r}
+ggplot(cotton_area_harvested_w, aes(x = year,
+                                    y = area_harvested_k_ac,
+                                    group = year
+                                    ))+
+  geom_boxplot()+
+  scale_x_continuous(breaks = round(seq(1940,2022, by =5),1))+
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size=25))+
+  ylab("cotton harvested area (thousand acres)")
+```
+In the years after 1994, the cotton harvested area data has comparatively larger variability than that before 1994.
+From the box plots above, data in the years 1999, 2001, 2006, and 2011 appear to have the largest variability. 
+
+
+## Plot the overall-county average of your category values over time. Around what year (you can eyabll on the plot) was it maximum? And minimum? Is there a trend (increasing over time, decreasing over time, goes up and down without a trend, etc)?  
+```{r}
+cotton_area_harvested_w %>%
+  group_by(year) %>%
+  summarise(mean_harvested_area_k_ac = mean(area_harvested_k_ac, na.rm = T)) %>%
+  
+  ggplot(aes(x = year, y = mean_harvested_area_k_ac))+
+  geom_line()+
+  scale_x_continuous(breaks = round(seq(1940,2022, by =5),1))+
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size=25))+
+  ylab("mean cotton harvested area (thousand acres)")
+  
+```
+The maximum of overall-county average of cotton harvested area was observed in 2011 and the minimum was observed in 1983. From 1943 to 1983, the overall-county average of cotton harvested area is in decreasing trend in slow rate, but from 1983 to 2021, the trend is in increasing order. Between 1990 and 2000, there is sudden increase in the overall-county average of cotton harvested area.
+
+## What was the highest category value in the most recent reported year?  
+```{r}
+cotton_highest <-cotton_area_harvested_w %>%
+  filter(year == 2021) %>%
+  arrange(desc(area_harvested_k_ac))
+head(cotton_highest)
+```
+In 2021, the highest value of cotton harvested area (i.e. 63.90 thousand acres) was observed in Dooly county.
+
+## Plot your category values over time for the highest ranked county in the most recent reported year. 
+As Dooly is the highest ranked county for cotton harvested area in 2021. The following is the plot for the cotton harvested area over time for Dooly county.
+```{r}
+cotton_area_harvested_w %>%
+  filter(county == "Dooly") %>%
+  ggplot(aes(x = year, y = area_harvested_k_ac))+
+  geom_line()+
+  scale_x_continuous(breaks = round(seq(1940,2022, by =5),1))+
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size=25))+
+  ylab("cotton harvested area (thousand acres)")
+```
+In Dooly county, the overall trend of cotton harvested area from year 1943 to 2004 seems to be in increasing trend, but from 2010 to 2021, the trend of the cotton harvested area seems to be constant or saturated between 60 to 75 thousand acres.
+
+## What was the lowest category value in the most recent reported year?  
+```{r}
+cotton_area_harvested_w %>%
+  filter(year == 2021) %>%
+  filter(area_harvested_k_ac == min(area_harvested_k_ac, na.rm = T))
+```
+In 2021, the lowest value of cotton harvested area (i.e. 2.79 thousand acres) was observed in Johnson county.
+
+## Plot your category values over time for the lowest ranked county in the most recent reported year. 
+As Johnson is the lowest ranked county for cotton harvested area in 2021. The following is the plot for the cotton harvested area over time for Johnson county.
+```{r}
+cotton_area_harvested_w %>%
+  filter(county == "Johnson") %>%
+  ggplot(aes(x = year, y = area_harvested_k_ac))+
+  geom_line()+
+  scale_x_continuous(breaks = round(seq(1940,2022, by =5),1))+
+  theme(axis.text = element_text(size = 20),
+        axis.title = element_text(size=25))+
+  ylab("cotton harvested area (thousand acres)")
+```
+From the above plot, it is observed that Johnson county had its highest cotton harvested area in 1952. Since then, the cotton harvested area goes on decreasing for Johnson county.
+
+## Plot category values over time for both of the counties above.
+The cotton harvested areas over time for Dooly and Johnson counties in Georgia is shown in the plot below:
+```{r}
+cotton_area_harvested_w %>%
+  filter(county %in% c("Dooly","Johnson" )) %>%
+  ggplot(aes(x=year, y= area_harvested_k_ac, color = county)) +
+  geom_line(na.rm = T)+
+  scale_x_continuous(breaks = round(seq(1940,2022, by =5),1))+
+  theme(axis.text.y = element_text(size = 20),
+        axis.text.x = element_text(size = 16),
+        axis.title = element_text(size=25),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size=25))+
+  ylab("cotton harvested area (thousand acres)")
+        
+```
+
+## Plot the state-wide summarized (e.g., summed if production, planted/harvested area, number of gins, and average if yield) category value on each year. Around what years was it highest? And lowest? 
+```{r}
+cotton_area_harvested_w %>%
+  group_by(year) %>%
+  summarise(total_area_harvested = sum(area_harvested_k_ac, na.rm = T)) %>%
+  ggplot(aes(x = year, y = total_area_harvested))+
+  geom_line()+
+  scale_x_continuous(breaks = round(seq(1940,2022, by =5),1))+
+  theme(text = element_text(size = 25))+
+  ylab("summed cotton harvested area (thousand acres)")
+```
+In 1943, the sum of cotton harvested areas for all counties in Georgia was highest. Either in 1978 or in 1983 the lowest sum of cotton harvested areas for all counties in Georgia was observed. To be precise, let's calculate the sum value in 1978 and 1983.
+```{r}
+cotton_1978 <- cotton_area_harvested_w %>%
+  filter(year==1978)
+sum(cotton_1978$area_harvested_k_ac)
+
+cotton_1983 <- cotton_area_harvested_w %>%
+  filter(year==1983)
+sum(cotton_1983$area_harvested_k_ac)
+```
+Hence, we conformed that the lowest value of sum of cotton harvested areas of all counties in Georgia was observed in 1978. 
+
+## Create a publication-ready static map with your category values for all counties in Georgia for the most recent reported year.  Make sure your axis and legend labels are professional and include units if needed. Add a title to your map. Add county names.
+```{r}
+#| message: false
+#| warning: false
+# creating geospatial data
+ga_co <- us_counties(states = "Georgia")
+
+# selecting county name and geometry only
+ga_co_w <- ga_co %>%
+  dplyr::select(county = name, geometry)
+
+# combining cotton area harvested data and county spatial data
+cotton_sp <- ga_co_w %>%
+  left_join(cotton_area_harvested_w, by = "county")
+
+# creating static map
+cotton_sp %>%
+  filter(year == 2021) %>%
+  ggplot()+
+  geom_sf(data = ga_co_w,
+          size =.3
+          )+
+  geom_sf(data = ~.,aes(fill = area_harvested_k_ac
+                        ),
+          size = .2
+          )+
+  # Selecting a colorblind-safe palette
+  scale_fill_viridis_b(option = "C")+
+  # Changing fill legend label, giving a title
+  labs(fill = "Harvested area\n(thousand acres)",
+       title = "County-level cotton harvested area in 2021",
+       )+
+  # Adding county names
+  geom_sf_text(data = ~.,
+               aes(label = county),
+               size = 5,
+               color = "white"
+               )+
+  # Changing to a cleaner theme
+  theme_void()+
+  theme(text = element_text(size = 30))
+```
+
+
+## Create an animated map with your category values for all counties in Georgia for all years. If historical data is available for more than 10 years into the past, filter to show only last 10 years of data.  
+```{r}
+#| message: false
+#| warning: false
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+map_ts <-cotton_sp %>%
+  # filtering last 10 years
+  filter(year > 2011) %>%
+  ggplot()+
+  geom_sf(data = ga_co_w,
+          size = .2)+
+  geom_sf(data = ~., aes(fill = area_harvested_k_ac,
+                         group = interaction(area_harvested_k_ac,
+                                             year)),
+          size = .2
+  )+
+  # Selecting a colorblind-safe palette
+  scale_fill_viridis_b(option = "C")+
+  # Changing fill legend label, giving a title
+  labs(fill = "Harvested area \n    (thousand acres)",
+       title = "County-level cotton harvested area in 2021"
+  )+
+  # Adding county names
+  geom_sf_text(data =  ~.,
+               aes(label = county,
+                   group = interaction(county, year)
+                   ),
+               size = 5,
+               color = "white"
+  )+
+  # Changing to a cleaner theme
+  theme_void()+
+  theme(text = element_text(size = 18))
+
+# Animated plot of last 10 years
+  #p.animation<-map_ts+ 
+map_ts+
+  transition_manual(year)+
+  labs(title = "County-level cotton harvested area in {current_frame}")
+
+ # animate(p.animation, height = 720, width =850)
+#anim_save("CountyHarvestArea.gif")
+```
+
+## Create an interactive map with your category values for all counties in Georgia for the most recent reported year.  
+```{r}
+#| message: false
+#| warning: false
+cotton_sp_2017 <- cotton_sp %>%
+          filter(year == 2021)
+
+mapview(ga_co_w, 
+        col.regions="white", 
+        alpha.regions = .1,
+        legend = NULL,
+        map.types = "CartoDB.Positron")+
+
+mapview(cotton_sp_2017,
+        zcol = "area_harvested_k_ac",
+        alpha.regions = 1,
+        col.regions = plasma(20),
+        layer.name = " Cotton - Harvested Area, 2021
+        (thousand acres)"
+)
+
+```
+
+# Submitting your work  
+Once you have developed all the code and answers, make sure to Render this quarto file.
+
+After rendering, an .html file will be created on your `code` folder.
+
+Rename this file to `LASTNAME_COMMODITY_CATEGORY_miniproject.html`.
+
+For ex., `Bastos_soybeans_production_miniproject.html`.
+
+Send the html file to my email (lmbastos@uga.edu) by Feb 17th 11:59 pm.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
